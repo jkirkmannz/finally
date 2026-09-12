@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from app.market.cache import PriceCache
-from app.market.simulator import SimulatorDataSource
+from app.market.simulator import GBMSimulator, SimulatorDataSource
 
 
 @pytest.mark.asyncio
@@ -128,11 +128,26 @@ class TestSimulatorDataSource:
         """Test creating source with custom event probability."""
         cache = PriceCache()
         # Very high event probability for testing
-        source = SimulatorDataSource(
-            price_cache=cache, update_interval=0.1, event_probability=1.0
-        )
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.1, event_probability=1.0)
         await source.start(["AAPL"])
 
         # Just verify it starts and stops cleanly
         await asyncio.sleep(0.2)
+        await source.stop()
+
+    async def test_dt_scales_with_update_interval(self):
+        """The GBM dt must track update_interval, not always assume 500ms.
+
+        Regression test: previously GBMSimulator was always constructed with
+        its 500ms-derived DEFAULT_DT regardless of update_interval, so a
+        faster/slower tick rate silently changed the simulator's effective
+        annualized volatility instead of just its update frequency.
+        """
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
+        await source.start(["AAPL"])
+
+        expected_dt = 0.1 / GBMSimulator.TRADING_SECONDS_PER_YEAR
+        assert source._sim._dt == pytest.approx(expected_dt)
+
         await source.stop()

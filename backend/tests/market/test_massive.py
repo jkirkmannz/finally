@@ -199,3 +199,24 @@ class TestMassiveDataSource:
         assert cache.get_price("AAPL") == 190.50
 
         await source.stop()
+
+    async def test_start_normalizes_ticker_case(self):
+        """Test that start() uppercases/strips tickers, matching add/remove_ticker.
+
+        Regression test: previously start() stored tickers verbatim while
+        remove_ticker() normalized before filtering, so a ticker passed to
+        start() in lowercase could never be removed.
+        """
+        cache = PriceCache()
+        source = MassiveDataSource(api_key="test-key", price_cache=cache, poll_interval=60.0)
+
+        with patch("app.market.massive_client.RESTClient"):
+            with patch.object(source, "_fetch_snapshots", return_value=[]):
+                await source.start([" aapl ", "googl"])
+
+        assert source.get_tickers() == ["AAPL", "GOOGL"]
+
+        await source.remove_ticker("aapl")
+        assert source.get_tickers() == ["GOOGL"]
+
+        await source.stop()

@@ -217,8 +217,13 @@ class SimulatorDataSource(MarketDataSource):
         self._task: asyncio.Task | None = None
 
     async def start(self, tickers: list[str]) -> None:
+        # dt must track the actual tick interval, not the 500ms default, or the
+        # annualized vol/drift in seed_prices.py silently becomes wrong whenever
+        # update_interval is anything other than 0.5s.
+        dt = self._interval / GBMSimulator.TRADING_SECONDS_PER_YEAR
         self._sim = GBMSimulator(
             tickers=tickers,
+            dt=dt,
             event_probability=self._event_prob,
         )
         # Seed the cache with initial prices so SSE has data immediately
