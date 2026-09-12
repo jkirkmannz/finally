@@ -1,5 +1,7 @@
 """Tests for PriceCache."""
 
+import threading
+
 from app.market.cache import PriceCache
 
 
@@ -101,3 +103,29 @@ class TestPriceCache:
         cache = PriceCache()
         update = cache.update("AAPL", 190.12345)
         assert update.price == 190.12
+
+    def test_concurrent_updates_are_not_lost(self):
+        """Many threads hammering update() concurrently must not lose or
+        corrupt writes — the version counter should exactly equal the number
+        of update() calls, and every ticker should end up with a valid entry.
+        """
+        cache = PriceCache()
+        tickers = [f"T{i}" for i in range(10)]
+        updates_per_thread = 200
+        num_threads = 8
+
+        def worker(thread_id: int) -> None:
+            for i in range(updates_per_thread):
+                ticker = tickers[(thread_id + i) % len(tickers)]
+                cache.update(ticker, 100.0 + i)
+
+        threads = [threading.Thread(target=worker, args=(t,)) for t in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert cache.version == num_threads * updates_per_thread
+        assert len(cache) == len(tickers)
+        for ticker in tickers:
+            assert cache.get(ticker) is not None
